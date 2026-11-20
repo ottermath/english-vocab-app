@@ -15,6 +15,28 @@ function shuffle<T>(items:T[]):T[]{const a=[...items];for(let i=a.length-1;i>0;i
 function localDateKey(d:Date){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 function dayDiff(date:string){const d=new Date(date),today=new Date();return Math.floor((new Date(today.getFullYear(),today.getMonth(),today.getDate()).getTime()-new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime())/86400000)}
 function makeContext(example:string,term:string,definition:string){const escaped=term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');const re=new RegExp(`\\b${escaped}\\b`,'i');if(example&&re.test(example))return example.replace(re,'_____');return `In this sentence, _____ means: ${definition||'the target vocabulary word'}.`}
+// 저장된 단어가 적어도 항상 네 개의 선택지를 제공합니다.
+const distractorBank:Record<string,string[]>={
+ noun:['spectator','successor','stranger','witness','companion','rival','merchant','prisoner','guardian','neighbor','visitor','servant','scholar','leader','victim','traitor','messenger','soldier','traveler','citizen'],
+ verb:['wander','hesitate','gather','vanish','observe','persuade','defend','recover','whisper','discover','surrender','approach','escape','refuse','respond','remain','arrive','depart','return','advance'],
+ adjective:['reluctant','furious','anxious','cautious','loyal','silent','distant','curious','fragile','eager','gentle','hostile','patient','restless','stubborn','fearful','grateful','serious','modest','weary'],
+ adverb:['quietly','suddenly','carefully','rarely','swiftly','firmly','barely','nearly','secretly','boldly','gently','eagerly','slowly','closely','honestly','frequently','silently','calmly','briefly','deeply']
+};
+function getDistractorPool(term:string){
+ const part=dictionaryCache.get(term.toLowerCase())?.partOfSpeech?.toLowerCase()||'';
+ if(part in distractorBank)return distractorBank[part];
+ if(term.toLowerCase().endsWith('ly'))return distractorBank.adverb;
+ return distractorBank.noun;
+}
+function makeFourOptions(word:Word,allWords:Word[]){
+ const unique=new Map<string,string>();
+ const add=(term:string)=>{const trimmed=term.trim();const k=trimmed.toLowerCase();if(k&&!unique.has(k))unique.set(k,trimmed)};
+ add(word.term);
+ const saved=shuffle(allWords.filter(w=>w.id!==word.id).map(w=>w.term));
+ for(const term of saved){if(unique.size>=4)break;add(term)}
+ for(const term of shuffle(getDistractorPool(word.term))){if(unique.size>=4)break;add(term)}
+ return shuffle([...unique.values()].slice(0,4));
+}
 function readLocal<T>(k:string,fallback:T):T{try{const x=localStorage.getItem(k);return x?JSON.parse(x):fallback}catch{return fallback}}
 function speak(term:string,locale:string){if(!('speechSynthesis'in window)){alert('이 브라우저는 음성 재생을 지원하지 않습니다.');return}window.speechSynthesis.cancel();const utter=new SpeechSynthesisUtterance(term);utter.lang=locale;utter.rate=.83;window.speechSynthesis.speak(utter)}
 type DictionaryResult={term:string;definition:string;example:string;ipa:string;audio:string;partOfSpeech:string};
@@ -63,7 +85,7 @@ async function sendMagicLink(){if(!supabase||!email.trim())return;setBusy(true);
    setDictionaryBusy(true);
    try{
     const result=await lookupDictionary(term);
-        if(active)setDictionaryInfo(result);
+    if(active)setDictionaryInfo(result);
    }catch(err){
     if(active)setDictionaryError(err instanceof Error?err.message:'사전 조회에 실패했습니다.');
    }finally{if(active)setDictionaryBusy(false)}
@@ -95,7 +117,7 @@ async function removeWord(w:Word){if(!confirm(`'${w.term}' 단어를 삭제할�
   const recent=words.filter(w=>dayDiff(w.created_at)>=0&&dayDiff(w.created_at)<3);
   const older=words.filter(w=>dayDiff(w.created_at)>=3);
   // 날짜와 사용자별로 하루 동안 동일한 오래된 단어를 유지합니다.
-    const storageKey=`vocab-daily-older-${user?.id||'local'}-${todayKey}`;
+  const storageKey=`vocab-daily-older-${user?.id||'local'}-${todayKey}`;
   let dailyIds:string[]=[];
   try{const stored=JSON.parse(localStorage.getItem(storageKey)||'[]');if(Array.isArray(stored))dailyIds=stored.filter((id):id is string=>typeof id==='string'&&older.some(w=>w.id===id))}catch{}
   const limit=Math.min(20,older.length);
@@ -105,8 +127,7 @@ async function removeWord(w:Word){if(!confirm(`'${w.term}' 단어를 삭제할�
   const selected=words.filter(w=>chosenIds.has(w.id));
   const tasks:QuizItem[]=[];
   selected.forEach(w=>{
-   const others=shuffle(words.filter(other=>other.id!==w.id&&other.term.toLowerCase()!==w.term.toLowerCase()));
-   const options=shuffle([w.term,...others.slice(0,3).map(x=>x.term)]);
+   const options=makeFourOptions(w,words);
    tasks.push({wordId:w.id,mode:'context',options,correctOption:options.indexOf(w.term),sentence:makeContext(w.example,w.term,w.meaning)});
    tasks.push({wordId:w.id,mode:'listen'});
   });
@@ -137,4 +158,3 @@ return <main className="shell"><header><div><h1><BookOpen size={26}/> My English
 <footer>발음 품질과 사용 가능한 음성은 브라우저 및 기기 환경에 따라 달라질 수 있습니다.</footer></main>}
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);
-               
