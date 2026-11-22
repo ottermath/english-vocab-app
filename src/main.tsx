@@ -119,7 +119,7 @@ async function removeWord(w:Word){if(!confirm(`'${w.term}' 단어를 삭제할�
   const recent=words.filter(w=>dayDiff(w.created_at)>=0&&dayDiff(w.created_at)<3);
   const older=words.filter(w=>dayDiff(w.created_at)>=3);
   // 날짜와 사용자별로 하루 동안 동일한 오래된 단어를 유지합니다.
-  const storageKey=`vocab-daily-older-${user?.id||'local'}-${todayKey}`;
+    const storageKey=`vocab-daily-older-${user?.id||'local'}-${todayKey}`;
   let dailyIds:string[]=[];
   try{const stored=JSON.parse(localStorage.getItem(storageKey)||'[]');if(Array.isArray(stored))dailyIds=stored.filter((id):id is string=>typeof id==='string'&&older.some(w=>w.id===id))}catch{}
   const limit=Math.min(20,older.length);
